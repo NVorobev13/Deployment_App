@@ -1,0 +1,12 @@
+replicas: 2
+image:
+  repository: 01101999navorobev/app-customer
+  tag: elfin_1
+resources:
+  limits:
+    cpu: 100m
+    memory: 100Mi
+  requests:
+    cpu: 50m
+    memory: 100Mi
+

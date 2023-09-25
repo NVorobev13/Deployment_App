@@ -1,0 +1,63 @@
+stages:
+  - build
+  - test
+  - cleanup
+  - push
+  - deploy
+
+variables:
+  DOCKER_IMAGE_NAME: 01101999navorobev/app-customer
+  DOCKER_IMAGE_TAG: elfin_1
+
+build:
+  stage: build
+  script:
+    - docker build -t $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID .
+
+test:
+  stage: test
+  image:
+    name: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID
+  script:
+    - docker run --rm --name app-elfin -p 8000:8000 -d $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID 
+
+cleanup:
+  stage: cleanup
+  image:
+    name: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID
+  script:
+    - docker stop $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID  && docker rmi $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID
+  when: always
+
+push:
+  stage: push
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN $CI_REGISTRY
+  script:
+    - docker push $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID
+  only:
+    - master
+
+deploy:
+  stage: deploy
+  image: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID
+  environment:
+    name: production
+  script:
+    - kubectl config set-cluster k8s --insecure-skip-tls-verify=true --server=$K8S_API_URL
+    - kubectl config set-credentials ci --token=$K8S_CI_TOKEN
+    - kubectl config set-context ci --cluster=k8s --user=ci
+    - kubectl config use-context ci
+    - helm upgrade --install $CI_PROJECT_PATH_SLUG .helm
+        --set image=$DOCKER_IMAGE_NAME
+        --set imageTag=$DOCKER_IMAGE_TAG.$CI_PIPELINE_ID
+        --wait
+        --timeout 300s
+        --atomic
+        --debug
+        --namespace $CI_PROJECT_PATH_SLUG-$CI_ENVIRONMENT_NAME
+  only:
+    - master
+
